@@ -6,9 +6,15 @@ const {
 	sign,
 	collectTrades,
 	collectWindows,
+	collectEarnPages,
 	DAY_MS,
 } = require('../dist/nodes/Binance/BinanceClient.js');
-const { writeRights, kline, toMillis } = require('../dist/nodes/Binance/Binance.node.js');
+const {
+	writeRights,
+	kline,
+	toMillis,
+	allHoldings,
+} = require('../dist/nodes/Binance/Binance.node.js');
 
 const noWait = async () => {};
 const ok = (body) => ({ statusCode: 200, headers: {}, body });
@@ -25,7 +31,13 @@ test('signature matches the HMAC example in the Binance spot docs', () => {
 
 test('signed calls carry key header, timestamp, recvWindow and a valid signature', async () => {
 	const seen = [];
-	const client = new BinanceClient(async (r) => (seen.push(r), ok([])), 'key', 'secret', noWait, () => 1700000000000);
+	const client = new BinanceClient(
+		async (r) => (seen.push(r), ok([])),
+		'key',
+		'secret',
+		noWait,
+		() => 1700000000000,
+	);
 	await client.signed('/api/v3/myTrades', { symbol: 'ETHEUR', fromId: 0, limit: 1000, empty: '' });
 	const url = new URL(seen[0].url);
 	assert.strictEqual(url.pathname, '/api/v3/myTrades');
@@ -41,7 +53,10 @@ test('public calls are unsigned GETs', async () => {
 	const seen = [];
 	const client = new BinanceClient(async (r) => (seen.push(r), ok([])));
 	await client.public('/api/v3/klines', { symbol: 'ETHEUR', interval: '1d' });
-	assert.strictEqual(seen[0].url, 'https://api.binance.com/api/v3/klines?symbol=ETHEUR&interval=1d');
+	assert.strictEqual(
+		seen[0].url,
+		'https://api.binance.com/api/v3/klines?symbol=ETHEUR&interval=1d',
+	);
 	assert.deepStrictEqual(seen[0].headers, {});
 });
 
@@ -49,7 +64,8 @@ test('429 waits for Retry-After and retries; other errors throw with the Binance
 	const waits = [];
 	let n = 0;
 	const client = new BinanceClient(
-		async () => (n++ < 2 ? { statusCode: 429, headers: { 'retry-after': '3' }, body: {} } : ok({ done: 1 })),
+		async () =>
+			n++ < 2 ? { statusCode: 429, headers: { 'retry-after': '3' }, body: {} } : ok({ done: 1 }),
 		'k',
 		's',
 		async (ms) => waits.push(ms),
@@ -59,7 +75,10 @@ test('429 waits for Retry-After and retries; other errors throw with the Binance
 
 	let calls = 0;
 	const failing = new BinanceClient(
-		async () => (calls++, { statusCode: 401, headers: {}, body: { code: -2015, msg: 'Invalid API-key' } }),
+		async () => (
+			calls++,
+			{ statusCode: 401, headers: {}, body: { code: -2015, msg: 'Invalid API-key' } }
+		),
 		'k',
 		's',
 		noWait,
@@ -95,7 +114,11 @@ test('-1021 resyncs the clock once from server time and retries', async () => {
 			if (url.pathname === '/api/v3/time') return ok({ serverTime: 1_005_000 });
 			stamps.push(Number(url.searchParams.get('timestamp')));
 			return stamps.length === 1
-				? { statusCode: 400, headers: {}, body: { code: -1021, msg: 'Timestamp outside recvWindow' } }
+				? {
+						statusCode: 400,
+						headers: {},
+						body: { code: -1021, msg: 'Timestamp outside recvWindow' },
+					}
 				: ok({ fine: true });
 		},
 		'k',
@@ -143,7 +166,12 @@ test('history walks 90-day windows and pages by offset inside a window', async (
 	);
 	assert.deepStrictEqual(
 		calls.map((c) => [(c[0] - since) / DAY_MS, c[2]]),
-		[[0, 0], [0, 1000], [90, 0], [180, 0]],
+		[
+			[0, 0],
+			[0, 1000],
+			[90, 0],
+			[180, 0],
+		],
 	);
 	for (const [start, end] of calls) assert.ok(end - start < 90 * DAY_MS && end <= until);
 	assert.strictEqual(rows.length, 1009);
@@ -167,4 +195,72 @@ test('dates: empty uses the fallback, garbage is rejected', () => {
 	assert.strictEqual(toMillis('', 42), 42);
 	assert.strictEqual(toMillis('2026-09-22T00:00:00Z', 0), Date.UTC(2026, 8, 22));
 	assert.throws(() => toMillis('nope', 0), /Not a valid date/);
+});
+
+test('all holdings read spot, funding (POST) and both Simple Earn kinds, dropping zeros', async () => {
+	const seen = [];
+	const bodies = {
+		'/api/v3/account': {
+			balances: [
+				{ asset: 'ETHW', free: '0.00000873', locked: '0' },
+				{ asset: 'BNB', free: '0', locked: '0' },
+			],
+		},
+		'/sapi/v1/asset/get-funding-asset': [
+			{ asset: 'XRP', free: '300', locked: '0', freeze: '12.5', withdrawing: '0' },
+		],
+		'/sapi/v1/simple-earn/flexible/position': {
+			rows: [{ asset: 'USDC', totalAmount: '10.5' }],
+			total: 1,
+		},
+		'/sapi/v1/simple-earn/locked/position': {
+			rows: [{ asset: 'XRP', amount: '50', positionId: '9' }],
+			total: 1,
+		},
+	};
+	const client = new BinanceClient(
+		async (r) => {
+			const path = new URL(r.url).pathname;
+			seen.push(r.method + ' ' + path);
+			return ok(bodies[path]);
+		},
+		'k',
+		's',
+		noWait,
+	);
+	const rows = await allHoldings(client);
+	assert.deepStrictEqual(rows, [
+		{ asset: 'ETHW', amount: 0.00000873, wallet: 'spot' },
+		{ asset: 'XRP', amount: 312.5, wallet: 'funding' },
+		{ asset: 'USDC', amount: 10.5, wallet: 'earnFlexible' },
+		{ asset: 'XRP', amount: 50, wallet: 'earnLocked', positionId: '9' },
+	]);
+	assert.ok(seen.includes('POST /sapi/v1/asset/get-funding-asset'));
+	assert.ok(seen.includes('GET /sapi/v1/simple-earn/locked/position'));
+});
+
+test('earn positions page until a short page or the reported total', async () => {
+	const guard = (current) => {
+		if (current > 10) throw new Error('earn paging never stops');
+	};
+	const pages = [];
+	const rows = await collectEarnPages(async (current, size) => {
+		guard(current);
+		pages.push([current, size]);
+		return { rows: Array.from({ length: current < 3 ? 100 : 4 }, () => ({})) };
+	});
+	assert.deepStrictEqual(pages, [
+		[1, 100],
+		[2, 100],
+		[3, 100],
+	]);
+	assert.strictEqual(rows.length, 204);
+
+	const exact = [];
+	await collectEarnPages(async (current) => {
+		guard(current);
+		exact.push(current);
+		return { rows: Array.from({ length: 100 }, () => ({})), total: 100 };
+	});
+	assert.deepStrictEqual(exact, [1]);
 });

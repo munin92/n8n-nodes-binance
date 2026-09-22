@@ -7,7 +7,7 @@ const DEFAULT_WAIT_MS = 10_000;
 const RECV_WINDOW = 10_000;
 
 export interface BinanceRequest {
-	method: 'GET';
+	method: 'GET' | 'POST';
 	url: string;
 	headers: Record<string, string>;
 }
@@ -69,7 +69,12 @@ export class BinanceClient {
 		}));
 	}
 
-	async signed(path: string, params: IDataObject = {}): Promise<unknown> {
+	// Binance takes POST parameters in the query string too, so both methods sign the same way.
+	async signed(
+		path: string,
+		params: IDataObject = {},
+		method: BinanceRequest['method'] = 'GET',
+	): Promise<unknown> {
 		const build = (): BinanceRequest => {
 			const query = encode({
 				...params,
@@ -77,7 +82,7 @@ export class BinanceClient {
 				timestamp: this.now() + this.clockOffsetMs,
 			});
 			return {
-				method: 'GET',
+				method,
 				url: `${BINANCE_API}${path}?${query}&signature=${sign(query, this.secret)}`,
 				headers: { 'X-MBX-APIKEY': this.key },
 			};
@@ -154,6 +159,20 @@ export async function collectTrades(
 		rows.push(...page);
 		if (page.length < 1000) break;
 		fromId = Number(page[page.length - 1].id) + 1;
+	}
+	return rows;
+}
+
+// Simple Earn positions page by `current` (1-based) and `size` (max 100) and report `total`.
+export async function collectEarnPages(
+	fetchPage: (current: number, size: number) => Promise<{ rows?: IDataObject[]; total?: number }>,
+): Promise<IDataObject[]> {
+	const rows: IDataObject[] = [];
+	for (let current = 1; ; current++) {
+		const page = await fetchPage(current, 100);
+		const got = page.rows ?? [];
+		rows.push(...got);
+		if (got.length < 100 || rows.length >= (page.total ?? Infinity)) break;
 	}
 	return rows;
 }
