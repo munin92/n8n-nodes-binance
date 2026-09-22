@@ -301,3 +301,36 @@ test('earn positions page until a short page or the reported total', async () =>
 	});
 	assert.deepStrictEqual(exact, [1]);
 });
+
+test('a rejected request (timeout) is retried and then surfaces as an error', async () => {
+	let calls = 0;
+	const waits = [];
+	const client = new BinanceClient(
+		async () => {
+			if (++calls <= 2) throw new Error('timeout of 60000ms exceeded');
+			return ok({ fine: true });
+		},
+		'k',
+		's',
+		async (ms) => waits.push(ms),
+	);
+	assert.deepStrictEqual(await client.signed('/api/v3/account'), { fine: true });
+	assert.strictEqual(calls, 3);
+	assert.deepStrictEqual(waits, [10000, 10000]);
+
+	let tries = 0;
+	const dead = new BinanceClient(
+		async () => {
+			if (++tries > 20) throw new Error('retries are unbounded');
+			throw new Error('socket hang up');
+		},
+		'k',
+		's',
+		noWait,
+	);
+	await assert.rejects(
+		dead.signed('/api/v3/account'),
+		(e) => e instanceof BinanceApiError && e.status === 0 && /socket hang up/.test(e.message),
+	);
+	assert.strictEqual(tries, 6);
+});

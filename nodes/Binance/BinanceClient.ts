@@ -105,11 +105,22 @@ export class BinanceClient {
 	}
 
 	// 429 is a rate limit, 418 an IP ban for ignoring one; both carry Retry-After.
+	// A rejected request (timeout, reset connection) is retried too: one slow call
+	// must not lose a history walk that is dozens of windows long.
 	private async attempt(
 		build: () => BinanceRequest,
 	): Promise<{ body?: unknown; error?: BinanceApiError }> {
 		for (let attempt = 0; ; attempt++) {
-			const response = await this.transport(build());
+			const response = await this.transport(build()).catch((cause: Error) => cause);
+			if (response instanceof Error) {
+				if (attempt < RETRIES) {
+					await this.wait(DEFAULT_WAIT_MS);
+					continue;
+				}
+				return {
+					error: new BinanceApiError(0, undefined, `Binance request failed: ${response.message}`),
+				};
+			}
 			if (response.statusCode < 400) return { body: response.body };
 			const limited = response.statusCode === 429 || response.statusCode === 418;
 			if (limited && attempt < RETRIES) {
