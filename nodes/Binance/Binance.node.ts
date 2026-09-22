@@ -345,7 +345,7 @@ export class Binance implements INodeType {
 					json: true,
 					returnFullResponse: true,
 					ignoreHttpStatusErrors: true,
-					timeout: 30_000,
+					timeout: 60_000,
 				})) as { statusCode: number; headers: BinanceResponse['headers']; body: unknown };
 				return { statusCode: res.statusCode, headers: res.headers, body: res.body };
 			},
