@@ -18,6 +18,7 @@ import {
 	BinanceApiError,
 	BinanceClient,
 	BinanceResponse,
+	collectEarnPages,
 	collectTrades,
 	collectWindows,
 } from './BinanceClient';
@@ -64,6 +65,43 @@ export function kline(row: unknown[]): IDataObject {
 	return { openTime, open, high, low, close, volume, closeTime, quoteVolume, trades, vwap };
 }
 
+// The spot account alone misses coins bought via "Buy Crypto" (Funding) or parked in Simple Earn.
+export async function allHoldings(client: BinanceClient): Promise<IDataObject[]> {
+	const rows: IDataObject[] = [];
+	const add = (asset: unknown, amount: unknown, wallet: string, extra: IDataObject = {}) => {
+		const value = Number(amount);
+		if (asset && value > 0) rows.push({ asset: String(asset), amount: value, wallet, ...extra });
+	};
+	const spot = (await client.signed('/api/v3/account', { omitZeroBalances: true })) as {
+		balances?: IDataObject[];
+	};
+	for (const b of spot.balances ?? []) add(b.asset, Number(b.free) + Number(b.locked), 'spot');
+	const funding = (await client.signed(
+		'/sapi/v1/asset/get-funding-asset',
+		{},
+		'POST',
+	)) as IDataObject[];
+	for (const f of funding ?? [])
+		add(f.asset, Number(f.free) + Number(f.locked) + Number(f.freeze), 'funding');
+	const flexible = await collectEarnPages(
+		async (current, size) =>
+			(await client.signed('/sapi/v1/simple-earn/flexible/position', { current, size })) as {
+				rows?: IDataObject[];
+				total?: number;
+			},
+	);
+	for (const f of flexible) add(f.asset, f.totalAmount, 'earnFlexible');
+	const locked = await collectEarnPages(
+		async (current, size) =>
+			(await client.signed('/sapi/v1/simple-earn/locked/position', { current, size })) as {
+				rows?: IDataObject[];
+				total?: number;
+			},
+	);
+	for (const l of locked) add(l.asset, l.amount, 'earnLocked', { positionId: l.positionId });
+	return rows;
+}
+
 export class Binance implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Binance',
@@ -108,6 +146,12 @@ export class Binance implements INodeType {
 				displayOptions: { show: { resource: ['account'] } },
 				options: [
 					{
+						name: 'Get All Holdings',
+						value: 'getAllHoldings',
+						description: 'Spot, Funding and Simple Earn holdings, one item per asset and wallet',
+						action: 'Get all holdings',
+					},
+					{
 						name: 'Get Balances',
 						value: 'getBalances',
 						description: 'Non-zero spot balances, one item per asset',
@@ -118,6 +162,12 @@ export class Binance implements INodeType {
 						value: 'getTrades',
 						description: 'All spot trades for one symbol, one item per trade',
 						action: 'Get trades',
+					},
+					{
+						name: 'Get Wallet Overview',
+						value: 'getWalletOverview',
+						description: 'Balance of every Binance wallet (Spot, Funding, Earn, …) in BTC',
+						action: 'Get wallet overview',
 					},
 				],
 				default: 'getBalances',
@@ -289,6 +339,16 @@ export class Binance implements INodeType {
 							...b,
 							total: Number(b.free) + Number(b.locked),
 						}));
+						break;
+					}
+
+					case 'getWalletOverview': {
+						rows = (await client.signed('/sapi/v1/asset/wallet/balance')) as IDataObject[];
+						break;
+					}
+
+					case 'getAllHoldings': {
+						rows = await allHoldings(client);
 						break;
 					}
 
