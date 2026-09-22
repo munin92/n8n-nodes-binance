@@ -152,13 +152,13 @@ test('trades page by fromId until a short page', async () => {
 	assert.strictEqual(rows.length, 2007);
 });
 
-test('history walks 90-day windows and pages by offset inside a window', async () => {
+test('history walks 90-day windows and pages inside a window', async () => {
 	const calls = [];
 	const since = Date.UTC(2026, 0, 1);
 	const until = since + 200 * DAY_MS;
 	const rows = await collectWindows(
-		async (start, end, offset) => {
-			calls.push([start, end, offset]);
+		async (start, end, pageIndex) => {
+			calls.push([start, end, pageIndex]);
 			return Array.from({ length: calls.length === 1 ? 1000 : 3 }, () => ({}));
 		},
 		since,
@@ -168,13 +168,50 @@ test('history walks 90-day windows and pages by offset inside a window', async (
 		calls.map((c) => [(c[0] - since) / DAY_MS, c[2]]),
 		[
 			[0, 0],
-			[0, 1000],
+			[0, 1],
 			[90, 0],
 			[180, 0],
 		],
 	);
 	for (const [start, end] of calls) assert.ok(end - start < 90 * DAY_MS && end <= until);
 	assert.strictEqual(rows.length, 1009);
+});
+
+test('window and page size are configurable (buy history: 30 days, 500 rows)', async () => {
+	const calls = [];
+	const since = Date.UTC(2026, 0, 1);
+	await collectWindows(
+		async (start, end, pageIndex) => {
+			calls.push([(start - since) / DAY_MS, pageIndex]);
+			if (calls.length > 20) throw new Error('never stops');
+			return Array.from({ length: calls.length === 1 ? 500 : 2 }, () => ({}));
+		},
+		since,
+		since + 70 * DAY_MS,
+		30 * DAY_MS,
+		500,
+	);
+	assert.deepStrictEqual(calls, [
+		[0, 0],
+		[0, 1],
+		[30, 0],
+		[60, 0],
+	]);
+});
+
+test('an unpaged endpoint (convert) never repeats a full window', async () => {
+	let calls = 0;
+	await collectWindows(
+		async () => {
+			if (++calls > 20) throw new Error('repeats the same window');
+			return Array.from({ length: 1000 }, () => ({}));
+		},
+		0,
+		10 * DAY_MS,
+		30 * DAY_MS,
+		Number.POSITIVE_INFINITY,
+	);
+	assert.strictEqual(calls, 1);
 });
 
 test('keys that can move funds are rejected, read-only keys pass', () => {
