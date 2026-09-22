@@ -129,21 +129,22 @@ export class BinanceClient {
 }
 
 export const DAY_MS = 86_400_000;
-const WINDOW_MS = 90 * DAY_MS;
 
-// Deposit and withdrawal history only answer within 90-day windows, 1000 rows per page.
+// History endpoints only answer within a time window; each window may span several pages.
 export async function collectWindows(
-	fetchPage: (startTime: number, endTime: number, offset: number) => Promise<IDataObject[]>,
+	fetchPage: (startTime: number, endTime: number, pageIndex: number) => Promise<IDataObject[]>,
 	since: number,
 	until: number,
+	windowMs = 90 * DAY_MS,
+	pageSize = 1000,
 ): Promise<IDataObject[]> {
 	const rows: IDataObject[] = [];
-	for (let start = since; start < until; start += WINDOW_MS) {
-		const end = Math.min(start + WINDOW_MS - 1, until);
-		for (let offset = 0; ; offset += 1000) {
-			const page = await fetchPage(start, end, offset);
+	for (let start = since; start < until; start += windowMs) {
+		const end = Math.min(start + windowMs - 1, until);
+		for (let pageIndex = 0; ; pageIndex++) {
+			const page = await fetchPage(start, end, pageIndex);
 			rows.push(...page);
-			if (page.length < 1000) break;
+			if (page.length < pageSize) break;
 		}
 	}
 	return rows;
