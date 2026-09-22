@@ -9,6 +9,8 @@ credential test refuses API keys that could.
 | Account | Get Balances | `GET /api/v3/account` (non-zero balances) |
 | Account | Get Wallet Overview | `GET /sapi/v1/asset/wallet/balance`, every wallet in BTC |
 | Account | Get Trades | `GET /api/v3/myTrades`, all trades of one symbol, paged by `fromId` |
+| Wallet | Get Buy Crypto History | `GET /sapi/v1/fiat/payments` (Buy Crypto with card/balance), 30-day windows |
+| Wallet | Get Convert History | `GET /sapi/v1/convert/tradeFlow`, 30-day windows |
 | Wallet | Get Deposits | `GET /sapi/v1/capital/deposit/hisrec`, walked in 90-day windows |
 | Wallet | Get Withdrawals | `GET /sapi/v1/capital/withdraw/history`, walked in 90-day windows |
 | Market Data | Get Klines | `GET /api/v3/klines`, each candle with a volume-weighted average price |

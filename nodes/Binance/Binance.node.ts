@@ -21,6 +21,7 @@ import {
 	collectEarnPages,
 	collectTrades,
 	collectWindows,
+	DAY_MS,
 } from './BinanceClient';
 
 // Binance launched in July 2017; nothing in an account can be older.
@@ -180,6 +181,18 @@ export class Binance implements INodeType {
 				displayOptions: { show: { resource: ['wallet'] } },
 				options: [
 					{
+						name: 'Get Buy Crypto History',
+						value: 'getBuyHistory',
+						description: 'Crypto bought or sold for fiat ("Buy Crypto"), one item per payment',
+						action: 'Get buy crypto history',
+					},
+					{
+						name: 'Get Convert History',
+						value: 'getConvertHistory',
+						description: 'Convert trades between two assets, one item per conversion',
+						action: 'Get convert history',
+					},
+					{
 						name: 'Get Deposits',
 						value: 'getDeposits',
 						description: 'Crypto deposit history, one item per deposit',
@@ -224,10 +237,25 @@ export class Binance implements INodeType {
 				displayName: 'Since',
 				name: 'since',
 				type: 'dateTime',
-				displayOptions: { show: { operation: ['getDeposits', 'getWithdrawals'] } },
+				displayOptions: {
+					show: {
+						operation: ['getDeposits', 'getWithdrawals', 'getBuyHistory', 'getConvertHistory'],
+					},
+				},
 				default: '',
 				description:
 					'Start of the history to read. Empty reads everything since Binance launched (July 2017).',
+			},
+			{
+				displayName: 'Direction',
+				name: 'direction',
+				type: 'options',
+				displayOptions: { show: { operation: ['getBuyHistory'] } },
+				options: [
+					{ name: 'Buy (Fiat → Crypto)', value: 0 },
+					{ name: 'Sell (Crypto → Fiat)', value: 1 },
+				],
+				default: 0,
 			},
 			{
 				displayName: 'Interval',
@@ -373,15 +401,57 @@ export class Binance implements INodeType {
 								? '/sapi/v1/capital/deposit/hisrec'
 								: '/sapi/v1/capital/withdraw/history';
 						rows = await collectWindows(
-							async (startTime, endTime, offset) =>
+							async (startTime, endTime, pageIndex) =>
 								(await client.signed(path, {
 									startTime,
 									endTime,
-									offset,
+									offset: pageIndex * 1000,
 									limit: 1000,
 								})) as IDataObject[],
 							since,
 							Date.now(),
+						);
+						break;
+					}
+
+					case 'getBuyHistory': {
+						const since = toMillis(this.getNodeParameter('since', i, ''), BINANCE_START);
+						const transactionType = this.getNodeParameter('direction', i, 0) as number;
+						rows = await collectWindows(
+							async (beginTime, endTime, pageIndex) => {
+								const res = (await client.signed('/sapi/v1/fiat/payments', {
+									transactionType,
+									beginTime,
+									endTime,
+									page: pageIndex + 1,
+									rows: 500,
+								})) as { data?: IDataObject[] };
+								return res?.data ?? [];
+							},
+							since,
+							Date.now(),
+							30 * DAY_MS,
+							500,
+						);
+						break;
+					}
+
+					case 'getConvertHistory': {
+						const since = toMillis(this.getNodeParameter('since', i, ''), BINANCE_START);
+						// The endpoint has no paging; 1000 per 30-day window is its ceiling.
+						rows = await collectWindows(
+							async (startTime, endTime) => {
+								const res = (await client.signed('/sapi/v1/convert/tradeFlow', {
+									startTime,
+									endTime,
+									limit: 1000,
+								})) as { list?: IDataObject[] };
+								return res?.list ?? [];
+							},
+							since,
+							Date.now(),
+							30 * DAY_MS,
+							Number.POSITIVE_INFINITY,
 						);
 						break;
 					}
