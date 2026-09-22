@@ -1,6 +1,6 @@
 {
   "name": "@munin92/n8n-nodes-binance",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Read-only n8n community node for the Binance API: balances, spot trades, deposits, withdrawals and daily klines.",
   "keywords": [
     "n8n-community-node-package",

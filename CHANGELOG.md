@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/munin92/n8n-nodes-binance/compare/v0.3.0...v0.3.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* retry rejected requests and raise the timeout ([96a437e](https://github.com/munin92/n8n-nodes-binance/commit/96a437e0e34c8ed01783e8b67732f420f2030e46))
+
 # [0.3.0](https://github.com/munin92/n8n-nodes-binance/compare/v0.2.0...v0.3.0) (2026-09-22)
 
 
