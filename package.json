@@ -1,0 +1,75 @@
+{
+  "name": "@munin92/n8n-nodes-binance",
+  "version": "0.1.0",
+  "description": "Read-only n8n community node for the Binance API: balances, spot trades, deposits, withdrawals and daily klines.",
+  "keywords": [
+    "n8n-community-node-package",
+    "binance",
+    "cryptocurrency",
+    "exchange",
+    "crypto"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/munin92/n8n-nodes-binance",
+  "author": {
+    "name": "munin92",
+    "email": "lippitz.marian@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/munin92/n8n-nodes-binance.git"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc && node scripts/copy-icons.mjs",
+    "dev": "tsc --watch",
+    "format": "prettier nodes credentials --write",
+    "format:check": "prettier nodes credentials --check",
+    "lint": "eslint .",
+    "lintfix": "eslint . --fix",
+    "test": "node --test test/*.test.js",
+    "test:ci": "npm run lint && npm run format:check && npm run build && npm test && npm run test:built",
+    "prepublishOnly": "npm run build && npm run lint && npm test && npm run test:built",
+    "test:built": "node --test test/built/*.test.mjs",
+    "release": "semantic-release"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/BinanceApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Binance/Binance.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/eslint-plugin-community-nodes": "^0.32.1",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/git": "^11.0.1",
+    "@types/node": "^24.13.6",
+    "eslint": "9.29.0",
+    "n8n-workflow": "~2.39.3",
+    "prettier": "^3.6.2",
+    "semantic-release": "^25.0.9",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.70.1"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "allowScripts": {
+    "isolated-vm": false,
+    "cpu-features": false,
+    "ssh2": false
+  }
+}

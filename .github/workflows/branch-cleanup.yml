@@ -1,0 +1,62 @@
+name: Branch cleanup
+
+# Loescht den Quellbranch, wenn ein Pull Request zugeht - auch dann, wenn er
+# ohne Merge geschlossen wurde. Die Repo-Einstellung `delete_branch_on_merge`
+# raeumt nur nach einem Merge auf und laesst geschlossene PRs stehen.
+#
+# Welche Branches ueberleben, wird NICHT hier gepflegt: gefragt wird der
+# Schutzstatus im Repo. Damit ist `develop` (geschuetzt) automatisch ausgenommen,
+# und ein spaeter geschuetzter Branch ebenso, ohne dass jemand diese Datei anfasst.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-head-branch:
+    runs-on: ubuntu-latest
+    # Forks liegen in einem fremden Repo - dort darf und kann diese Aktion nichts
+    # loeschen.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Delete the head branch unless it is protected
+        env:
+          # Branchnamen sind Fremdeingabe und gehoeren nie in eine
+          # ${{ }}-Ersetzung innerhalb von run - hier als Variable, gequotet.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          set -euo pipefail
+
+          if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "$BRANCH ist der Standardbranch - bleibt stehen."
+            exit 0
+          fi
+
+          # Ein Aufruf beantwortet beides: gibt es den Branch noch, und ist er
+          # geschuetzt. Schlaegt er fehl - Branch schon weg oder API gestoert -
+          # wird nichts geloescht. Nichtstun ist hier die sichere Seite.
+          if ! geschuetzt=$(gh api "repos/$REPO/branches/$BRANCH" --jq .protected); then
+            echo "Kein Zugriff auf $BRANCH (schon geloescht oder API gestoert) - nichts zu tun."
+            exit 0
+          fi
+
+          if [ "$geschuetzt" != "false" ]; then
+            echo "$BRANCH ist geschuetzt - bleibt stehen."
+            exit 0
+          fi
+
+          # Schliesst Dependabot einen eigenen PR selbst (etwa weil er ueberholt
+          # ist), laeuft dieser Job unter dem eingeschraenkten Dependabot-Token
+          # und das DELETE endet in 403. Der Job faellt dann sichtbar rot aus -
+          # das ist gewollt, ein stiller Fehlschlag waere schlechter. Die
+          # Repo-Einstellung `delete_branch_on_merge` deckt den Merge-Fall
+          # unabhaengig davon ab.
+          echo "Loesche $BRANCH (merged=$MERGED)."
+          gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"

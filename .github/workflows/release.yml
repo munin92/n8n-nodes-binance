@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # Tags, Releases, der Release-Commit
+  issues: write # @semantic-release/github kommentiert erledigte Issues
+  pull-requests: write # dasselbe fuer PRs
+  id-token: write # OIDC fuer npm Trusted Publishing - ohne das kein Publish
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          # 24 ist das aktuelle LTS und die Version, auf der n8n selbst laeuft
+          # (n8n 2.36.7 -> node v24.18.1). Bringt npm 11.17 mit, also ueber der
+          # OIDC-Grenze von 11.5.1 - kein globales npm-Update noetig.
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:built
+      # Kein NPM_TOKEN: @semantic-release/npm >= 13 tauscht den OIDC-Token der
+      # Action gegen ein kurzlebiges Registry-Token. Voraussetzung ist ein auf
+      # npmjs.com hinterlegter Trusted Publisher fuer dieses Repo und genau
+      # diese Workflow-Datei.
+      - name: Release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
