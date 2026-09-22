@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/munin92/n8n-nodes-binance/compare/v0.2.0...v0.3.0) (2026-09-22)
+
+
+### Features
+
+* read Buy Crypto and Convert history ([5de9742](https://github.com/munin92/n8n-nodes-binance/commit/5de97422a8a5da40f4f56d832b271eba8bb4e029))
+
 # [0.2.0](https://github.com/munin92/n8n-nodes-binance/compare/v0.1.0...v0.2.0) (2026-09-22)
 
 
